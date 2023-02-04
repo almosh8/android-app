@@ -15,6 +15,7 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -27,7 +28,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import androidx.core.util.Pair;
 
@@ -103,6 +106,10 @@ public class ScreenCaptureService extends Service {
                     // write bitmap to a file
                     fos = new FileOutputStream(mStoreDir + "/myscreen_" + IMAGES_PRODUCED + ".png");
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Log.i("kalzak", LocalDateTime.now().toString());
+                        TimeUnit.SECONDS.sleep(3);
+                    }
 
                     IMAGES_PRODUCED++;
                     Log.e(TAG, "captured image: " + IMAGES_PRODUCED);
@@ -189,6 +196,7 @@ public class ScreenCaptureService extends Service {
                     stopSelf();
                 }
             }
+            Log.i("kalzak", storeDirectory.getAbsolutePath());
         } else {
             Log.e(TAG, "failed to create file storage directory, getExternalFilesDir is null.");
             stopSelf();
