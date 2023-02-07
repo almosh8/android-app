@@ -1,11 +1,15 @@
-package com.mtsahakis.mediaprojectiondemo;
+package com.mtsahakis.mediaprojectiondemo.services;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Notification;
 import android.app.Service;
+import android.app.usage.UsageStats;
+import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
@@ -29,10 +33,17 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
+import androidx.annotation.RequiresApi;
 import androidx.core.util.Pair;
+
+import com.mtsahakis.mediaprojectiondemo.NotificationUtils;
+import com.mtsahakis.mediaprojectiondemo.datahandlers.DataHandler;
 
 public class ScreenCaptureService extends Service {
 
@@ -57,6 +68,10 @@ public class ScreenCaptureService extends Service {
     private int mHeight;
     private int mRotation;
     private OrientationChangeCallback mOrientationChangeCallback;
+
+    PackageManager packageManager;
+    List<ApplicationInfo> packages;
+    String lastAppName;
 
     public static Intent getStartIntent(Context context, int resultCode, Intent data) {
         Intent intent = new Intent(context, ScreenCaptureService.class);
@@ -86,6 +101,7 @@ public class ScreenCaptureService extends Service {
     }
 
     private class ImageAvailableListener implements ImageReader.OnImageAvailableListener {
+        @RequiresApi(api = Build.VERSION_CODES.O)
         @Override
         public void onImageAvailable(ImageReader reader) {
 
@@ -104,11 +120,44 @@ public class ScreenCaptureService extends Service {
                     bitmap.copyPixelsFromBuffer(buffer);
 
                     // write bitmap to a file
-                    fos = new FileOutputStream(mStoreDir + "/myscreen_" + IMAGES_PRODUCED + ".png");
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+                    //fos = new FileOutputStream(mStoreDir + "/myscreen_" + IMAGES_PRODUCED + ".png");
+                    //bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+
+                    UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+                    long time = System.currentTimeMillis();
+                    long lastMinuteTime = time - 60 * 1000;
+                    long latestAppTimeUsed = 0;
+                    List<UsageStats> appList = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, time - 66 * 1000, time);
+                    Log.i("kalzak", "applist size is " + String.valueOf(appList.size()));
+                    if (appList != null && appList.size() > 0) {
+                        UsageStats latestAppUsageStats = null;
+                        for (UsageStats usageStats : appList) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                long currentAppTimeUsed = usageStats.getLastTimeUsed();
+                                if (currentAppTimeUsed > lastMinuteTime && currentAppTimeUsed > latestAppTimeUsed) {
+                                    latestAppTimeUsed = currentAppTimeUsed;
+                                    latestAppUsageStats = usageStats;
+                                }
+                            }
+                        }
+
+                        if (latestAppUsageStats != null) {
+                            String lastAppPackageName = latestAppUsageStats.getPackageName();
+                            ApplicationInfo packageInfoList = packages.stream()
+                                    .filter(packageInfo -> packageInfo.packageName.equals(lastAppPackageName))
+                                    .findAny()
+                                    .orElse(null);
+                            lastAppName = (String) packageManager.getApplicationLabel(packageInfoList);
+                        }
+
+                        DataHandler dataHandler = new DataHandler(bitmap, lastAppName);
+                        dataHandler.handleData();
+                        Log.i("kalzak", lastAppName);
+                    }
+
+
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        Log.i("kalzak", LocalDateTime.now().toString());
-                        TimeUnit.SECONDS.sleep(3);
+                        waitUntilNextMinute();
                     }
 
                     IMAGES_PRODUCED++;
@@ -130,6 +179,15 @@ public class ScreenCaptureService extends Service {
                     bitmap.recycle();
                 }
 
+            }
+        }
+
+        private void waitUntilNextMinute() throws InterruptedException {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                int currentSecond = LocalDateTime.now().getSecond();
+                int waitSeconds = 60 - currentSecond + 1;
+                Log.i("kalzak", String.valueOf(waitSeconds));
+                TimeUnit.SECONDS.sleep(waitSeconds);
             }
         }
     }
@@ -183,6 +241,9 @@ public class ScreenCaptureService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+
+        packageManager = getPackageManager();
+        packages = packageManager.getInstalledApplications(PackageManager.GET_META_DATA);
 
         // create store dir
         File externalFilesDir = getExternalFilesDir(null);

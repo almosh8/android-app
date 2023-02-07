@@ -1,14 +1,18 @@
 package com.mtsahakis.mediaprojectiondemo;
 
 import android.app.Activity;
+import android.app.AppOpsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.media.projection.MediaProjectionManager;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
+
+import com.mtsahakis.mediaprojectiondemo.services.ScreenCaptureService;
 
 
 public class ScreenCaptureActivity extends Activity {
@@ -29,7 +33,7 @@ public class ScreenCaptureActivity extends Activity {
 
             @Override
             public void onClick(View v) {
-                startProjection();
+                startScreenCapture();
             }
         });
 
@@ -42,6 +46,19 @@ public class ScreenCaptureActivity extends Activity {
                 stopProjection();
             }
         });
+
+        if (!hasUsageStatsPermission(this)) {
+            Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+            startActivity(intent);
+        }
+
+    }
+
+    private boolean hasUsageStatsPermission(Context context) {
+        AppOpsManager appOps = (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
+        int mode = appOps.checkOpNoThrow("android:get_usage_stats",
+                android.os.Process.myUid(), context.getPackageName());
+        return mode == AppOpsManager.MODE_ALLOWED;
     }
 
     @Override
@@ -50,13 +67,13 @@ public class ScreenCaptureActivity extends Activity {
         savedProjectionIntent = data;
         if (requestCode == REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK) {
-                startProjectionIntent();
+                startScreenCaptureService();
             }
         }
     }
 
     /****************************************** UI Widget Callbacks *******************************/
-    private void startProjection() {
+    private void startScreenCapture() {
         Log.i("kalzak", "first");
         MediaProjectionManager mProjectionManager =
                 (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -64,18 +81,18 @@ public class ScreenCaptureActivity extends Activity {
         if(savedProjectionIntent == null)
             startActivityForResult(mProjectionManager.createScreenCaptureIntent(), REQUEST_CODE);
         else {
-            startProjectionIntent();
+            startScreenCaptureService();
         }
         Log.i("kalzak", "third");
     }
 
-    private void startProjectionIntent() {
+    private void startScreenCaptureService() {
         Intent projectionIntent = (Intent) savedProjectionIntent.clone();
-        startService(com.mtsahakis.mediaprojectiondemo.ScreenCaptureService.getStartIntent(this, Activity.RESULT_OK, projectionIntent));
+        startService(ScreenCaptureService.getStartIntent(this, Activity.RESULT_OK, projectionIntent));
     }
 
     private void stopProjection() {
-        startService(com.mtsahakis.mediaprojectiondemo.ScreenCaptureService.getStopIntent(this));
+        startService(ScreenCaptureService.getStopIntent(this));
     }
 
 }
