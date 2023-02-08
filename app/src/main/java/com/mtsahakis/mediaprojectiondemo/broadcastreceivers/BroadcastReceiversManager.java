@@ -15,15 +15,15 @@ public class BroadcastReceiversManager {
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction("android.intent.action.SCREEN_ON");
 
-        DeviceUnlockedBroadcastReceiver deviceUnlockedBroadcastReceiver = new DeviceUnlockedBroadcastReceiver();
-        context.registerReceiver(deviceUnlockedBroadcastReceiver, intentFilter);
+        //DeviceUnlockedBroadcastReceiver deviceUnlockedBroadcastReceiver = new DeviceUnlockedBroadcastReceiver();
+        //context.registerReceiver(deviceUnlockedBroadcastReceiver, intentFilter);
     }
 
     private static void registerDeviceLockedBroadcastReceiver(Context context) {
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction("android.intent.action.SCREEN_OFF");
 
-        DeviceLockedBroadcastReceiver deviceLockedBroadcastReceiver = new DeviceLockedBroadcastReceiver();
-        context.registerReceiver(deviceLockedBroadcastReceiver, intentFilter);
+        //DeviceLockedBroadcastReceiver deviceLockedBroadcastReceiver = new DeviceLockedBroadcastReceiver();
+        //context.registerReceiver(deviceLockedBroadcastReceiver, intentFilter);
     }
 }
