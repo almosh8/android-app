@@ -32,18 +32,6 @@
             android:name=".services.ScreenCaptureService"
             android:foregroundServiceType="mediaProjection" />
 
-        <receiver android:name=".broadcastreceivers.DeviceUnlockedBroadcastReceiver" android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.SCREEN_ON"/>
-            </intent-filter>
-        </receiver>
-
-        <receiver android:name=".broadcastreceivers.DeviceLockedBroadcastReceiver" android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.SCREEN_OFF"/>
-            </intent-filter>
-        </receiver>
-
     </application>
 
 </manifest>
