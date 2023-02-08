@@ -11,7 +11,7 @@ public class DeviceLockedBroadcastReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
         if (action.equals(Intent.ACTION_SCREEN_OFF)) {
-            Log.i("kalzak", "device unlocked");
+            Log.i("kalzak", "device locked");
         }
     }
 }
