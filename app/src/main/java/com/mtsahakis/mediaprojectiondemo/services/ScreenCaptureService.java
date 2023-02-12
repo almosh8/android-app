@@ -6,8 +6,10 @@ import android.app.Notification;
 import android.app.Service;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
@@ -28,6 +30,12 @@ import android.view.Display;
 import android.view.OrientationEventListener;
 import android.view.WindowManager;
 
+import androidx.annotation.RequiresApi;
+import androidx.core.util.Pair;
+
+import com.mtsahakis.mediaprojectiondemo.datahandlers.DataHandler;
+import com.mtsahakis.mediaprojectiondemo.utils.NotificationUtils;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -35,15 +43,7 @@ import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
-import java.util.SortedMap;
-import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
-
-import androidx.annotation.RequiresApi;
-import androidx.core.util.Pair;
-
-import com.mtsahakis.mediaprojectiondemo.NotificationUtils;
-import com.mtsahakis.mediaprojectiondemo.datahandlers.DataHandler;
 
 public class ScreenCaptureService extends Service {
 
@@ -67,11 +67,15 @@ public class ScreenCaptureService extends Service {
     private int mWidth;
     private int mHeight;
     private int mRotation;
+    private int resultCode;
+    private boolean isPaused;
     private OrientationChangeCallback mOrientationChangeCallback;
 
-    PackageManager packageManager;
-    List<ApplicationInfo> packages;
-    String lastAppName;
+    private PackageManager packageManager;
+    private List<ApplicationInfo> packages;
+    private String lastAppName;
+    private Intent data;
+    private Looper looper;
 
     public static Intent getStartIntent(Context context, int resultCode, Intent data) {
         Intent intent = new Intent(context, ScreenCaptureService.class);
@@ -101,16 +105,31 @@ public class ScreenCaptureService extends Service {
     }
 
     private class ImageAvailableListener implements ImageReader.OnImageAvailableListener {
+
         @RequiresApi(api = Build.VERSION_CODES.O)
         @Override
         public void onImageAvailable(ImageReader reader) {
 
+
+            Image image = mImageReader.acquireLatestImage();
+            IMAGES_PRODUCED++;
+            Log.e(TAG, "captured image: " + IMAGES_PRODUCED);
+            Image.Plane[] planes = image.getPlanes();
+            ByteBuffer buffer = planes[0].getBuffer();
+            waitUntilNextMinute();
+
+            if (isPaused) {
+                while (isPaused) {
+                    waitUntilNextMinute();
+                }
+                return;
+            }
+
             FileOutputStream fos = null;
             Bitmap bitmap = null;
-            try (Image image = mImageReader.acquireLatestImage()) {
+            try {
                 if (image != null) {
-                    Image.Plane[] planes = image.getPlanes();
-                    ByteBuffer buffer = planes[0].getBuffer();
+
                     int pixelStride = planes[0].getPixelStride();
                     int rowStride = planes[0].getRowStride();
                     int rowPadding = rowStride - pixelStride * mWidth;
@@ -154,14 +173,6 @@ public class ScreenCaptureService extends Service {
                         dataHandler.handleData();
                         Log.i("kalzak", lastAppName);
                     }
-
-
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        waitUntilNextMinute();
-                    }
-
-                    IMAGES_PRODUCED++;
-                    Log.e(TAG, "captured image: " + IMAGES_PRODUCED);
                 }
 
             } catch (Exception e) {
@@ -178,18 +189,23 @@ public class ScreenCaptureService extends Service {
                 if (bitmap != null) {
                     bitmap.recycle();
                 }
+            }
+        }
+    }
 
+    private void waitUntilNextMinute() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            int currentSecond = LocalDateTime.now().getSecond();
+            int waitSeconds = 60 - currentSecond + 1;
+            Log.i("kalzak", String.valueOf(waitSeconds));
+            //TimeUnit.SECONDS.sleep(waitSeconds);
+            try {
+                TimeUnit.SECONDS.sleep(5);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
 
-        private void waitUntilNextMinute() throws InterruptedException {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                int currentSecond = LocalDateTime.now().getSecond();
-                int waitSeconds = 60 - currentSecond + 1;
-                Log.i("kalzak", String.valueOf(waitSeconds));
-                TimeUnit.SECONDS.sleep(waitSeconds);
-            }
-        }
     }
 
     private class OrientationChangeCallback extends OrientationEventListener {
@@ -244,6 +260,7 @@ public class ScreenCaptureService extends Service {
 
         packageManager = getPackageManager();
         packages = packageManager.getInstalledApplications(PackageManager.GET_META_DATA);
+        isPaused = false;
 
         // create store dir
         File externalFilesDir = getExternalFilesDir(null);
@@ -281,10 +298,16 @@ public class ScreenCaptureService extends Service {
             Pair<Integer, Notification> notification = NotificationUtils.getNotification(this);
             startForeground(notification.first, notification.second);
             // start projection
-            int resultCode = intent.getIntExtra(RESULT_CODE, Activity.RESULT_CANCELED);
-            Intent data = intent.getParcelableExtra(DATA);
-            startProjection(resultCode, data);
+            resultCode = intent.getIntExtra(RESULT_CODE, Activity.RESULT_CANCELED);
+            data = intent.getParcelableExtra(DATA);
+
+
+            registerProjectionBroadcastReceivers(this);
+            startProjection();
+
+
         } else if (isStopCommand(intent)) {
+            unregisterProjectionBroadcastReceivers(this);
             stopProjection();
             stopSelf();
         } else {
@@ -294,7 +317,8 @@ public class ScreenCaptureService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void startProjection(int resultCode, Intent data) {
+    public void startProjection() {
+        Intent data = (Intent) this.data.clone();
         MediaProjectionManager mpManager =
                 (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         if (mMediaProjection == null) {
@@ -316,6 +340,8 @@ public class ScreenCaptureService extends Service {
 
                 // register media projection stop callback
                 mMediaProjection.registerCallback(new MediaProjectionStopCallback(), mHandler);
+
+                Log.i("kalzak", "projection started");
             }
         }
     }
@@ -333,6 +359,16 @@ public class ScreenCaptureService extends Service {
         }
     }
 
+    public void pauseProjectionLooper() {
+        isPaused = true;
+        Log.i("kalzak", "projection paused");
+    }
+
+    public void resumeProjectionLooper() {
+        isPaused = false;
+        Log.i("kalzak", "projection resumed");
+    }
+
     @SuppressLint("WrongConstant")
     private void createVirtualDisplay() {
         // get width and height
@@ -344,5 +380,67 @@ public class ScreenCaptureService extends Service {
         mVirtualDisplay = mMediaProjection.createVirtualDisplay(SCREENCAP_NAME, mWidth, mHeight,
                 mDensity, getVirtualDisplayFlags(), mImageReader.getSurface(), null, mHandler);
         mImageReader.setOnImageAvailableListener(new ImageAvailableListener(), mHandler);
+    }
+
+    private class DeviceLockedBroadcastReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action.equals(Intent.ACTION_SCREEN_OFF)) {
+                pauseProjectionLooper();
+                Log.i("kalzak", "device locked");
+            }
+        }
+    }
+
+    private class DeviceUnlockedBroadcastReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            assert action != null;
+            if (action.equals(Intent.ACTION_SCREEN_ON)) {
+                resumeProjectionLooper();
+                Log.i("kalzak", "device unlocked");
+            }
+        }
+    }
+
+    public void registerProjectionBroadcastReceivers(Context context) {
+        registerDeviceUnlockedBroadcastReceiver(context);
+        registerDeviceLockedBroadcastReceiver(context);
+
+    }
+
+    private void registerDeviceUnlockedBroadcastReceiver(Context context) {
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(Intent.ACTION_SCREEN_ON);
+
+        DeviceUnlockedBroadcastReceiver deviceUnlockedBroadcastReceiver = new DeviceUnlockedBroadcastReceiver();
+        context.registerReceiver(deviceUnlockedBroadcastReceiver, intentFilter);
+    }
+
+    private void registerDeviceLockedBroadcastReceiver(Context context) {
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(Intent.ACTION_SCREEN_OFF);
+
+        DeviceLockedBroadcastReceiver deviceLockedBroadcastReceiver = new DeviceLockedBroadcastReceiver();
+        context.registerReceiver(deviceLockedBroadcastReceiver, intentFilter);
+    }
+
+
+    public void unregisterProjectionBroadcastReceivers(Context context) {
+        unregisterDeviceUnlockedBroadcastReceiver(context);
+        unregisterDeviceLockedBroadcastReceiver(context);
+
+    }
+
+    private void unregisterDeviceUnlockedBroadcastReceiver(Context context) {
+        DeviceUnlockedBroadcastReceiver deviceUnlockedBroadcastReceiver = new DeviceUnlockedBroadcastReceiver();
+        context.unregisterReceiver(deviceUnlockedBroadcastReceiver);
+    }
+
+    private void unregisterDeviceLockedBroadcastReceiver(Context context) {
+        DeviceLockedBroadcastReceiver deviceLockedBroadcastReceiver = new DeviceLockedBroadcastReceiver();
+        context.unregisterReceiver(deviceLockedBroadcastReceiver);
     }
 }

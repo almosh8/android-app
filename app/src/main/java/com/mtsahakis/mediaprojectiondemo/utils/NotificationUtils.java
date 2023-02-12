@@ -1,4 +1,4 @@
-package com.mtsahakis.mediaprojectiondemo;
+package com.mtsahakis.mediaprojectiondemo.utils;
 
 
 import android.annotation.TargetApi;
@@ -11,6 +11,8 @@ import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.core.util.Pair;
+
+import com.mtsahakis.mediaprojectiondemo.R;
 
 
 public class NotificationUtils {
